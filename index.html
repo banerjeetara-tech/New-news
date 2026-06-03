@@ -319,7 +319,7 @@ const state = {
   print: {},   // id -> [items]
   video: {},   // id -> [items]
   sum: load("brief.sum", { breaking:[], ai:[], ts:null, aiWritten:false }),
-  kolkata: [],
+  kolkata: load("brief.kolkata", []),
   loadingSum: false,
   speaking: false,
   query: "",
@@ -832,13 +832,16 @@ async function loadKolkata(){
   try{
     const kolUrl = "https://news.google.com/rss/search?q=Kolkata&hl=en-IN&gl=IN&ceid=IN:en";
     let items = [];
-    // rss2json is primary — fetches Google News server-side, no caching issues
-    // runs after refreshFeeds so rss2json capacity is free
-    try{ items = await fetchViaRss2Json(kolUrl); }catch(e){}
-    // fallback: corsproxy first (shorter cache), then allorigins with cache-bust
+    // corsproxy.io first — shortest cache (~2 min), gives freshest Kolkata news
+    try{
+      const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(kolUrl)}`, {cache:"no-store"});
+      if(r.ok){ const xml = await r.text(); if(xml.length>150) items = parsePrint(xml); }
+    }catch(e){}
+    // rss2json fallback
+    if(!items.length) try{ items = await fetchViaRss2Json(kolUrl); }catch(e){}
+    // allorigins with cache-bust as last resort
     if(!items.length){
       for(const p of [
-        `https://corsproxy.io/?url=${encodeURIComponent(kolUrl)}`,
         `https://api.allorigins.win/raw?url=${encodeURIComponent(kolUrl)}&_=${Date.now()}`
       ]){
         try{
@@ -849,6 +852,7 @@ async function loadKolkata(){
     }
     if(items.length){
       state.kolkata = items.slice(0,15).map(i=>({t:i.title,d:i.dek||"",l:i.link||""}));
+      save("brief.kolkata", state.kolkata);
       render();
     }
   }catch(e){}
@@ -856,7 +860,8 @@ async function loadKolkata(){
 
 hydrateCache();
 render();
-refreshFeeds().then(() => loadKolkata());
+refreshFeeds();
+loadKolkata();
 </script>
 </body>
 </html>
