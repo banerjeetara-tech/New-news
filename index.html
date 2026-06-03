@@ -288,7 +288,7 @@ const VIDEO = [
   { id:"ddindia",   name:"DD India",            short:"DD",   color:"#7B9A8A", ytid:"UCGDQNvybfDDeGTf4GtigXaw", handle:"@DDIndia" },
   { id:"republic",  name:"Republic World",      short:"REP",  color:"#B07A5A", ytid:"UCwqusr8YDwM-3mEYTDeJHzw", handle:"@RepublicWorld" },
   { id:"firstpost", name:"Firstpost",           short:"FP",   color:"#5C8AA6", ytid:"UCz8QaiQxApLq8sLNcszYyJw", handle:"@Firstpost" },
-  { id:"abp",       name:"ABP Ananda",          short:"ABP",  color:"#B06E6E", ytid:"UCv3rFzn-GHGtqzXiaq3sWNg", handle:"@abpananda" },
+  { id:"abp",       name:"ABP Ananda",          short:"ABP",  color:"#B06E6E", ytid:"UCv3rFzn-GHGtqzXiaq3sWNg", handle:"@abpanandatv" },
 ];
 
 /* Summary sources — all FREE, no API, no Twitter (Twitter has no reliable free feed).
@@ -472,30 +472,17 @@ async function loadPrint(src){
 async function loadVideo(ch){
   const tryId = async id => {
     if(!id) return [];
-    const yt = `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-    const proxies = [
-      `https://corsproxy.io/?url=${encodeURIComponent(yt)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yt)}&_=${Date.now()}`,
-      `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(yt)}`,
-    ];
-    for(const p of proxies){
-      try{
-        const ctrl = new AbortController();
-        setTimeout(()=>ctrl.abort(), 7000);
-        const r = await fetch(p, {cache:"no-store", signal:ctrl.signal});
-        if(!r.ok) continue;
-        const t = await r.text();
-        if(t&&t.length>150){const items=parseVideo(t);if(items.length)return items;}
-      }catch(e){}
-    }
-    return [];
+    try{ return parseVideo(await proxyFetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${id}`)); }
+    catch(e){ return []; }
   };
-  // 1) cached resolved id, else the hardcoded id
+  // Always prefer the hardcoded ytid — cached scraped IDs can be stale/wrong
+  // Only use cached ID if ytid is null (channels without a known ID)
   const cachedId = localStorage.getItem("brief.ytid."+ch.id);
-  let id = cachedId || ch.ytid;
+  if(ch.ytid && cachedId && cachedId !== ch.ytid) localStorage.removeItem("brief.ytid."+ch.id);
+  let id = ch.ytid || cachedId;
   let items = await tryId(id);
-  // 2) if nothing came back, resolve the real id from the channel handle (then cache it)
-  if(!items.length && ch.handle){
+  // 2) if nothing came back and no hardcoded ytid, resolve from channel handle (then cache it)
+  if(!items.length && !ch.ytid && ch.handle){
     try{
       const html = await proxyFetch("https://www.youtube.com/"+ch.handle);
       const m = html.match(/"(?:channelId|externalId)":"(UC[\w-]{22})"/) || html.match(/channel\/(UC[\w-]{22})/);
@@ -519,9 +506,9 @@ function hydrateCache(){
     const v = load("brief.video."+c.id, null);
     if(v && v.length){
       const newest = Math.max(...v.map(i => i.ts||0));
-      // Only use cache if newest video is within 2 hours — otherwise force fresh fetch
-      if(Date.now() - newest < 7200000) state.video[c.id] = v;
-      else localStorage.removeItem("brief.video."+c.id);
+      // Only skip cache if we have real timestamps AND they're older than 2 hours
+      if(newest > 0 && Date.now() - newest > 7200000) localStorage.removeItem("brief.video."+c.id);
+      else state.video[c.id] = v;
     }
   });
 }
