@@ -319,7 +319,7 @@ const state = {
   print: {},   // id -> [items]
   video: {},   // id -> [items]
   sum: load("brief.sum", { breaking:[], ai:[], ts:null, aiWritten:false }),
-  kolkata: load("brief.kolkata", []),
+  kolkata: [],
   loadingSum: false,
   speaking: false,
   query: "",
@@ -830,20 +830,26 @@ try{ if(window.speechSynthesis){ window.speechSynthesis.getVoices(); window.spee
 
 async function loadKolkata(){
   try{
-    // Bust allorigins cache by adding timestamp to proxy URL (not Google News URL)
     const kolUrl = "https://news.google.com/rss/search?q=Kolkata&hl=en-IN&gl=IN&ceid=IN:en";
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(kolUrl)}&_=${Date.now()}`;
     let items = [];
-    try{
-      const r = await fetch(proxyUrl, {cache:"no-store"});
-      if(r.ok){ const xml = await r.text(); if(xml.length>150) items = parsePrint(xml); }
-    }catch(e){}
-    // fallback via rss2json if proxy gave nothing
-    if(!items.length) items = await fetchMany([kolUrl]);
+    // rss2json is primary — fetches Google News server-side, no caching issues
+    // runs after refreshFeeds so rss2json capacity is free
+    try{ items = await fetchViaRss2Json(kolUrl); }catch(e){}
+    // fallback: corsproxy first (shorter cache), then allorigins with cache-bust
+    if(!items.length){
+      for(const p of [
+        `https://corsproxy.io/?url=${encodeURIComponent(kolUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(kolUrl)}&_=${Date.now()}`
+      ]){
+        try{
+          const r = await fetch(p, {cache:"no-store"});
+          if(r.ok){ const xml = await r.text(); if(xml.length>150){ items = parsePrint(xml); if(items.length) break; } }
+        }catch(e){}
+      }
+    }
     if(items.length){
       state.kolkata = items.slice(0,15).map(i=>({t:i.title,d:i.dek||"",l:i.link||""}));
-      save("brief.kolkata", state.kolkata);
-      if(state.tab==="summary" && state.sumView==="kolkata") render();
+      render();
     }
   }catch(e){}
 }
