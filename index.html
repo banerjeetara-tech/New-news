@@ -830,10 +830,16 @@ try{ if(window.speechSynthesis){ window.speechSynthesis.getVoices(); window.spee
 
 async function loadKolkata(){
   try{
-    const items = await fetchMany([
-      "https://news.google.com/rss/search?q=Kolkata&hl=en-IN&gl=IN&ceid=IN:en",
-      "https://news.google.com/rss/search?q=Kolkata%20news&hl=en-IN&gl=IN&ceid=IN:en"
-    ]);
+    // Bust allorigins cache by adding timestamp to proxy URL (not Google News URL)
+    const kolUrl = "https://news.google.com/rss/search?q=Kolkata&hl=en-IN&gl=IN&ceid=IN:en";
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(kolUrl)}&_=${Date.now()}`;
+    let items = [];
+    try{
+      const r = await fetch(proxyUrl, {cache:"no-store"});
+      if(r.ok){ const xml = await r.text(); if(xml.length>150) items = parsePrint(xml); }
+    }catch(e){}
+    // fallback via rss2json if proxy gave nothing
+    if(!items.length) items = await fetchMany([kolUrl]);
     if(items.length){
       state.kolkata = items.slice(0,15).map(i=>({t:i.title,d:i.dek||"",l:i.link||""}));
       save("brief.kolkata", state.kolkata);
